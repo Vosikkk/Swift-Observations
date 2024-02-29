@@ -55,10 +55,60 @@ class Suspect: Observable {
 
 let suspect = Suspect(name: "Darth Vader", suspiciousness: 33)
 
-withObservationTracking {
-    print("I am observing \(suspect.name)")
-} onChange: {
-    print("Name changed!")
+
+var ON_CHANGE_CLOSURE: (@Sendable () -> Void)?
+
+class ObservationRegistrar: @unchecked Sendable {
+    
+    var registry: [AnyKeyPath: (@Sendable () -> Void)] = [:]
+    
+    func access<Subject, Member>(
+        _ subject: Subject,
+        keyPath: KeyPath<Subject, Member>
+    ) where Subject : Observable {
+        print("access \(keyPath)")
+        if let closure =  ON_CHANGE_CLOSURE {
+            registry[keyPath] = closure
+        }
+    }
+    
+    
+    func withMutation<Subject, Member, T>(
+        of subject: Subject,
+        keyPath: KeyPath<Subject, Member>,
+        _ mutation: () throws -> T
+    ) rethrows -> T where Subject : Observable {
+        print("mutation \(keyPath)")
+        if let closure = registry.removeValue(forKey: keyPath) {
+            closure()
+        }
+        return try mutation()
+    }
 }
 
-print(suspect.name)
+
+
+
+public func withObservationTracking<T>(
+    _ apply: () -> T,
+    onChange: @escaping @Sendable () -> Void
+) -> T {
+    print("Setting the global ON_CHANGE_CLOSURE")
+    ON_CHANGE_CLOSURE = onChange
+    
+    
+    let result = apply()
+    
+    return result
+}
+
+
+
+withObservationTracking {
+  print("I am observing \(suspect.name)")
+} onChange: {
+  print("Name changed!")
+}
+
+suspect.name = "New Name"
+//suspect.suspiciousness = 12
