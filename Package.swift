@@ -4,20 +4,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "Swift-Observations",
+    name: "Observations",
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
-            name: "Swift-Observations",
-            targets: ["Swift-Observations"]),
+            name: "Observations",
+            targets: ["Observations"]),
+        .executable(name: "ObservationsClient", targets: ["ObservationsClient"])
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "Swift-Observations"),
-        .testTarget(
-            name: "Swift-ObservationsTests",
-            dependencies: ["Swift-Observations"]),
+            name: "Observations"),
+        .executableTarget(name: "ObservationsClient"),
+        
     ]
 )
