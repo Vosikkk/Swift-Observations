@@ -60,16 +60,33 @@ var ON_CHANGE_CLOSURE: (@Sendable () -> Void)?
 
 class ObservationRegistrar: @unchecked Sendable {
     
-    var registry: [AnyKeyPath: (@Sendable () -> Void)] = [:]
+    var registry: [AnyKeyPath: Set<Observation.ID>] = [:]
+    var observations: [Observation.ID: Observation] = [:]
+    
+    struct Observation: Identifiable {
+        let id: UUID = UUID()
+        let keyPaths: Set<AnyKeyPath>
+        let closure: @Sendable () -> Void
+    }
+    
+    func registerOnChange(
+        _ keyPaths: Set<AnyKeyPath>,
+        _ onChange: @escaping @Sendable () -> Void
+    ) {
+        let observation = Observation(keyPaths: keyPaths, closure: onChange)
+        observations[observation.id] = observation
+        for keyPath in keyPaths {
+            registry[keyPath, default: []].insert(observation.id)
+        }
+    }
+    
     
     func access<Subject, Member>(
         _ subject: Subject,
         keyPath: KeyPath<Subject, Member>
     ) where Subject : Observable {
         print("access \(keyPath)")
-        if let closure =  ON_CHANGE_CLOSURE {
-            registry[keyPath] = closure
-        }
+        GLOBAL_ACCESS_LIST?.trackAccess(self, keyPath: keyPath)
     }
     
     
@@ -79,13 +96,38 @@ class ObservationRegistrar: @unchecked Sendable {
         _ mutation: () throws -> T
     ) rethrows -> T where Subject : Observable {
         print("mutation \(keyPath)")
-        if let closure = registry.removeValue(forKey: keyPath) {
-            closure()
-        }
+        
         return try mutation()
     }
 }
 
+var GLOBAL_ACCESS_LIST: AccessList?
+
+struct AccessList {
+    
+    struct Entry {
+        var registrar: ObservationRegistrar
+        var keyPaths: Set<AnyKeyPath> = []
+    }
+    
+    var entries: [ObjectIdentifier: Entry] = [:]
+    
+    mutating func trackAccess(_ registrar: ObservationRegistrar, keyPath: AnyKeyPath) {
+        let id = ObjectIdentifier(registrar)
+        entries[id, default: Entry(registrar: registrar)].keyPaths.insert(keyPath)
+    }
+    
+    func registerOnChange(_ onChange: @escaping @Sendable () -> Void) {
+        for entry in entries {
+            let registrar = entry.value.registrar
+            let keyPaths = entry.value.keyPaths
+            registrar.registerOnChange(
+                keyPaths,
+                onChange
+            )
+        }
+    }
+}
 
 
 
@@ -93,11 +135,14 @@ public func withObservationTracking<T>(
     _ apply: () -> T,
     onChange: @escaping @Sendable () -> Void
 ) -> T {
-    print("Setting the global ON_CHANGE_CLOSURE")
-    ON_CHANGE_CLOSURE = onChange
-    
+    // 1. Set a global closure
+    // 2. call apply()
+    // 3. suspect.access(\.name)
+    GLOBAL_ACCESS_LIST = AccessList()
     
     let result = apply()
+    
+    GLOBAL_ACCESS_LIST?.registerOnChange(onChange)
     
     return result
 }
@@ -105,10 +150,10 @@ public func withObservationTracking<T>(
 
 
 withObservationTracking {
-  print("I am observing \(suspect.name)")
+    print("I am observing \(suspect.name) \(suspect.suspiciousness)/")
 } onChange: {
   print("Name changed!")
 }
 
 suspect.name = "New Name"
-//suspect.suspiciousness = 12
+suspect.suspiciousness = 12
